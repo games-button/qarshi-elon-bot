@@ -10,7 +10,7 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 logging.basicConfig(level=logging.INFO)
 
 # --- MA'LUMOTLAR ---
-API_TOKEN = '8295176970:AAFfx-A-0QpA_el2QfduSdHboQGVA9WJd-o'
+API_TOKEN = '8295176970:AAGU2lgLNXacMWNChJARPrBpm8OqKzTFC0U'
 ADMIN_ID = 6952175243  # Bu yerda ortiqcha belgilar olib tashlandi
 
 bot = Bot(token=API_TOKEN)
