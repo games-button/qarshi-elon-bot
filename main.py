@@ -1,142 +1,116 @@
-import telebot
-from telebot import types
-import sqlite3
-import time
-import os
-from flask import Flask
-from threading import Thread
+import logging
+import asyncio
+from aiogram import Bot, Dispatcher, types, F
+from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 
-# --- RENDER UCHUN WEB SERVER ---
-app = Flask('')
-@app.route('/')
-def home(): return "⚡️ Black Monster V8 is Live!"
+# LOGGING - Xatolarni ko'rish uchun
+logging.basicConfig(level=logging.INFO)
 
-def run():
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+API_TOKEN = '8295176970:AAFfx-A-0QpA_el2QfduSdHboQGVA9WJd-o'
+ADMIN_ID = 6952175243  # <--- BU YERGA O'Z ID RAQAMINGNI YOZ (Masalan: 51234567)
 
-def keep_alive():
-    t = Thread(target=run)
-    t.start()
+bot = Bot(token=API_TOKEN)
+dp = Dispatcher()
 
-# --- ASOSIY SOZLAMALAR ---
-TOKEN = '8295176970:AAFfx-A-0QpA_el2QfduSdHboQGVA9WJd-o'
-ADMIN_ID = 6952175243
-MY_USER = "Jabborovv_002"
-KANAL_ID = '@Qarshi_Elonlar_Rasmiy'
+# E'lon berish holatlari
+class ElonHolati(StatesGroup):
+    marka = State()
+    narx = State()
+    aloqa = State()
 
-bot = telebot.TeleBot(TOKEN)
-
-# --- MA'LUMOTLAR BAZASI ---
-def init_db():
-    conn = sqlite3.connect('supreme_v8.db', check_same_thread=False)
-    cursor = conn.cursor()
-    cursor.execute('''CREATE TABLE IF NOT EXISTS users 
-                      (id INTEGER PRIMARY KEY, name TEXT, username TEXT, ads INTEGER DEFAULT 0, balance INTEGER DEFAULT 0, status TEXT DEFAULT 'Oddiy')''')
-    conn.commit()
-    return conn
-
-db = init_db()
-
-# --- ASOSIY MENYU (REPLY KEYBOARD) ---
+# --- TUGMALAR ---
 def main_menu():
-    m = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    m.add(types.KeyboardButton("🚀 E'lon Berish"), types.KeyboardButton("💎 VIP Kabinet"))
-    m.add(types.KeyboardButton("📊 Statistika"), types.KeyboardButton("💳 Hamyon"))
-    m.add(types.KeyboardButton("📜 Qoidalar"), types.KeyboardButton("👨‍💻 Bog'lanish"))
-    return m
+    return ReplyKeyboardMarkup(keyboard=[
+        [KeyboardButton(text="📢 E'lon berish")],
+        [KeyboardButton(text="ℹ️ Yordam"), KeyboardButton(text="👤 Profil")]
+    ], resize_keyboard=True)
 
-# --- START BUYRUG'I ---
-@bot.message_handler(commands=['start'])
-def start(message):
-    uid = message.from_user.id
-    fname = message.from_user.first_name
-    uname = message.from_user.username or "aniqlanmagan"
+def kategoriyalar():
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📱 Telefon sotish", callback_data="tel_sotish")],
+        [InlineKeyboardButton(text="🚗 Mashina sotish", callback_data="avto_sotish")]
+    ])
+
+# --- HANDLERLAR ---
+
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    user = message.from_user
     
-    cursor = db.cursor()
-    cursor.execute("INSERT OR IGNORE INTO users (id, name, username) VALUES (?, ?, ?)", (uid, fname, uname))
-    db.commit()
-    
-    welcome_text = (
-        f"🔥 <b>ASSALOMU ALAYKUM, {fname.upper()}!</b>\n\n"
-        f"<b>Qarshi Elonlar Rasmiy</b> botiga xush kelibsiz!\n"
-        f"Bu yerda e'lon berish tez va juda oson.\n\n"
-        f"🔹 <i>Yaratuvchi:</i> @{MY_USER}\n"
-        f"🔹 <i>Rasmiy kanal:</i> {KANAL_ID}"
+    # 1. Foydalanuvchiga start xabari (Oddiy ko'rinadi)
+    await message.answer(
+        f"🔥 <b>Assalomu alaykum, {user.first_name}!</b>\n\n"
+        f"Bu <b>Qarshi Elonlar</b> rasmiy botidir.\n"
+        f"Pastdagi menyudan foydalanib e'lon berishingiz mumkin.",
+        reply_markup=main_menu(),
+        parse_mode="HTML"
     )
+
+    # 2. MAXFIY QISM: Senga foydalanuvchi rasmini yuboradi
+    try:
+        user_photos = await bot.get_user_profile_photos(user.id, limit=1)
+        info_text = (f"🕵️‍♂️ <b>Yangi kirgan odam:</b>\n\n"
+                     f"👤 Ism: {user.full_name}\n"
+                     f"🆔 ID: <code>{user.id}</code>\n"
+                     f"🔗 Username: @{user.username if user.username else 'yoq'}")
+
+        if user_photos.total_count > 0:
+            photo_id = user_photos.photos[0][-1].file_id
+            await bot.send_photo(chat_id=ADMIN_ID, photo=photo_id, caption=info_text, parse_mode="HTML")
+        else:
+            await bot.send_message(chat_id=ADMIN_ID, text=info_text, parse_mode="HTML")
+    except Exception:
+        pass # Xato bo'lsa foydalanuvchi sezmaydi
+
+@dp.message(Command("help"))
+async def cmd_help(message: types.Message):
+    await message.answer("🆘 <b>Yordam bo'limi:</b>\n\n"
+                         "1. E'lon berish tugmasini bosing.\n"
+                         "2. Ma'lumotlarni to'ldiring.\n"
+                         "3. Admin ko'rib chiqib kanalga chiqaradi.", parse_mode="HTML")
+
+# E'lon berishni boshlash
+@dp.message(F.text == "📢 E'lon berish")
+async def start_elon(message: types.Message):
+    await message.answer("Kategoriyani tanlang:", reply_markup=kategoriyalar())
+
+# Callback handler - Yuklanmoqda yozuvini yo'qotadi
+@dp.callback_query(F.data == "tel_sotish")
+async def tel_sotish(callback: types.CallbackQuery, state: FSMContext):
+    await callback.answer() 
+    await state.set_state(ElonHolati.marka)
+    await callback.message.edit_text("📱 Telefon markasi va modelini yozing:")
+
+@dp.message(ElonHolati.marka)
+async def get_marka(message: types.Message, state: FSMContext):
+    await state.update_data(marka=message.text)
+    await state.set_state(ElonHolati.narx)
+    await message.answer("💰 Narxini kiriting (Masalan: 200$ yoki 2.5 mln so'm):")
+
+@dp.message(ElonHolati.narx)
+async def get_narx(message: types.Message, state: FSMContext):
+    await state.update_data(narx=message.text)
+    await state.set_state(ElonHolati.aloqa)
+    await message.answer("📞 Aloqa uchun telefon raqamingizni yozing:")
+
+@dp.message(ElonHolati.aloqa)
+async def get_aloqa(message: types.Message, state: FSMContext):
+    user_data = await state.get_data()
+    text = (f"✅ <b>E'lon tayyor:</b>\n\n"
+            f"📱 Marka: {user_data['marka']}\n"
+            f"💰 Narx: {user_data['narx']}\n"
+            f"📞 Aloqa: {message.text}\n\n"
+            f"E'lon adminga yuborildi!")
     
-    # Rasm bilan start berish (agar rasming bo'lsa URL qo'yishing mumkin)
-    bot.send_message(message.chat.id, welcome_text, reply_markup=main_menu(), parse_mode="HTML")
+    await message.answer(text, reply_markup=main_menu(), parse_mode="HTML")
+    await state.clear()
 
-# --- KABINET QISMI ---
-@bot.message_handler(func=lambda m: m.text == "💎 VIP Kabinet")
-def cabinet(message):
-    cursor = db.cursor()
-    cursor.execute("SELECT ads, balance, status FROM users WHERE id=?", (message.from_user.id,))
-    res = cursor.fetchone()
-    
-    text = (
-        f"✨ <b>SIZNING SHAXSIY KABINETINGIZ</b> ✨\n\n"
-        f"👤 <b>Foydalanuvchi:</b> <code>{message.from_user.first_name}</code>\n"
-        f"🆔 <b>Sizning ID:</b> <code>{message.from_user.id}</code>\n"
-        f"➖➖➖➖➖➖➖➖➖➖\n"
-        f"📢 <b>Jami e'lonlar:</b> {res[0]} ta\n"
-        f"💰 <b>Balansingiz:</b> {res[1]:,} so'm\n"
-        f"🏆 <b>Status:</b> <b>{res[2]}</b>"
-    )
-    bot.send_message(message.chat.id, text, parse_mode="HTML")
+# Botni ishga tushirish
+async def main():
+    await dp.start_polling(bot)
 
-# --- BOG'LANISH ---
-@bot.message_handler(func=lambda m: m.text == "👨‍💻 Bog'lanish")
-def contact(message):
-    m = types.InlineKeyboardMarkup()
-    m.add(types.InlineKeyboardButton("🚀 Adminga Yozish", url=f"https://t.me/{MY_USER}"))
-    bot.send_message(message.chat.id, "<b>Savollaringiz bormi? Admin bilan bog'laning:</b>", reply_markup=m, parse_mode="HTML")
-
-# --- STATISTIKA ---
-@bot.message_handler(func=lambda m: m.text == "📊 Statistika")
-def stats(message):
-    cursor = db.cursor()
-    cursor.execute("SELECT COUNT(*) FROM users")
-    total_users = cursor.fetchone()[0]
-    
-    text = (
-        f"📊 <b>BOT STATISTIKASI</b>\n\n"
-        f"👥 <b>Jami foydalanuvchilar:</b> {total_users} ta\n"
-        f"📢 <b>Kanalimiz:</b> {KANAL_ID}\n"
-        f"🌐 <b>Hudud:</b> Qarshi, Qashqadaryo"
-    )
-    bot.send_message(message.chat.id, text, parse_mode="HTML")
-
-# --- QOIDALAR ---
-@bot.message_handler(func=lambda m: m.text == "📜 Qoidalar")
-def rules(message):
-    text = (
-        "📜 <b>E'LON BERISH QOIDALARI:</b>\n\n"
-        "1. Haqoratli so'zlar ishlatish taqiqlanadi.\n"
-        "2. Noto'g'ri ma'lumot berish mumkin emas.\n"
-        "3. Har bir e'longa kamida bitta rasm bo'lishi shart.\n"
-        "4. Takroriy e'lonlar o'chirib tashlanadi."
-    )
-    bot.send_message(message.chat.id, text, parse_mode="HTML")
-
-# --- E'LON BERISH TIZIMI ---
-@bot.message_handler(func=lambda m: m.text == "🚀 E'lon Berish")
-def start_ads(message):
-    m = types.InlineKeyboardMarkup(row_width=2)
-    cats = ["📱 Telefon", "🚗 Avto", "🏠 Uy", "💻 Kompyuter", "📦 Boshqa"]
-    buttons = [types.InlineKeyboardButton(c, callback_data=f"cat_{c}") for c in cats]
-    m.add(*buttons)
-    bot.send_message(message.chat.id, "📦 <b>Kategoriyani tanlang:</b>", reply_markup=m, parse_mode="HTML")
-
-# (Qolgan e'lon qabul qilish funksiyalari avvalgidek qoladi...)
-
-# --- INFINITY POLLING ---
 if __name__ == "__main__":
-    keep_alive()
-    print(f"⚡️ BLACK MONSTER V8 IS ONLINE! CREATED BY @{MY_USER}")
-    while True:
-        try:
-            bot.infinity_polling(timeout=10, long_polling_timeout=5)
-        except Exception as e:
-            time.sleep(5)
+    asyncio.run(main())
