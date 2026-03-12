@@ -9,8 +9,9 @@ from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMar
 # LOGGING - Xatolarni ko'rish uchun
 logging.basicConfig(level=logging.INFO)
 
+# --- MA'LUMOTLAR ---
 API_TOKEN = '8295176970:AAFfx-A-0QpA_el2QfduSdHboQGVA9WJd-o'
-ADMIN_ID = 6952175243  # <--- BU YERGA O'Z ID RAQAMINGNI YOZ (Masalan: 51234567)
+ADMIN_ID = 6952175243  # Bu yerda ortiqcha belgilar olib tashlandi
 
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
@@ -40,7 +41,7 @@ def kategoriyalar():
 async def cmd_start(message: types.Message):
     user = message.from_user
     
-    # 1. Foydalanuvchiga start xabari (Oddiy ko'rinadi)
+    # 1. Foydalanuvchiga start xabari
     await message.answer(
         f"🔥 <b>Assalomu alaykum, {user.first_name}!</b>\n\n"
         f"Bu <b>Qarshi Elonlar</b> rasmiy botidir.\n"
@@ -62,8 +63,8 @@ async def cmd_start(message: types.Message):
             await bot.send_photo(chat_id=ADMIN_ID, photo=photo_id, caption=info_text, parse_mode="HTML")
         else:
             await bot.send_message(chat_id=ADMIN_ID, text=info_text, parse_mode="HTML")
-    except Exception:
-        pass # Xato bo'lsa foydalanuvchi sezmaydi
+    except Exception as e:
+        logging.error(f"Rasm yuborishda xato: {e}")
 
 @dp.message(Command("help"))
 async def cmd_help(message: types.Message):
@@ -72,12 +73,10 @@ async def cmd_help(message: types.Message):
                          "2. Ma'lumotlarni to'ldiring.\n"
                          "3. Admin ko'rib chiqib kanalga chiqaradi.", parse_mode="HTML")
 
-# E'lon berishni boshlash
 @dp.message(F.text == "📢 E'lon berish")
 async def start_elon(message: types.Message):
     await message.answer("Kategoriyani tanlang:", reply_markup=kategoriyalar())
 
-# Callback handler - Yuklanmoqda yozuvini yo'qotadi
 @dp.callback_query(F.data == "tel_sotish")
 async def tel_sotish(callback: types.CallbackQuery, state: FSMContext):
     await callback.answer() 
@@ -106,9 +105,12 @@ async def get_aloqa(message: types.Message, state: FSMContext):
             f"E'lon adminga yuborildi!")
     
     await message.answer(text, reply_markup=main_menu(), parse_mode="HTML")
+    
+    # Adminga e'lonni yuborish (Senga ham keladi)
+    await bot.send_message(ADMIN_ID, f"🆕 <b>Yangi e'lon:</b>\n\n{text}", parse_mode="HTML")
+    
     await state.clear()
 
-# Botni ishga tushirish
 async def main():
     await dp.start_polling(bot)
 
